@@ -64,6 +64,54 @@ def extract_path_from_href(href: str) -> Path:
     return Path(href)
 
 
+def convert_to_plain_svg_if_needed(svg_path: Path) -> Path:
+    """
+    If the SVG uses Inkscape-specific namespaces, convert it to Plain SVG
+    using the modern Inkscape CLI. Otherwise, return the original path.
+    """
+    try:
+        tree = etree.parse(str(svg_path))
+        root = tree.getroot()
+    except etree.XMLSyntaxError as e:
+        logger.error(f"Failed to parse SVG: {svg_path} — {e}")
+        raise
+
+    nsmap = root.nsmap
+    if any(ns for ns in nsmap if ns in ["inkscape", "sodipodi"]):
+        logger.info(
+            f"{svg_path.name} uses Inkscape-specific features. Converting to Plain SVG."
+        )
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".svg") as tmp_file:
+            plain_svg_path = Path(tmp_file.name)
+
+        result = subprocess.run(
+            [
+                "inkscape",
+                str(svg_path),
+                "--export-plain-svg",
+                "--export-type=svg",
+                f"--export-filename={str(plain_svg_path)}",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        if result.returncode != 0:
+            logger.error(
+                f"Inkscape failed to convert to plain SVG:\n{result.stderr.decode()}"
+            )
+            raise RuntimeError("Inkscape export-plain-svg failed.")
+
+        if not plain_svg_path.exists() or plain_svg_path.stat().st_size == 0:
+            logger.error("Inkscape output file is empty or missing.")
+            raise RuntimeError("Plain SVG output is empty.")
+
+        return plain_svg_path
+    else:
+        logger.info(f"{svg_path.name} is already a plain SVG.")
+        return svg_path
+
+
 def inline_svg_image_element(image_elem, href: str, parser, href_attr: str):
     """
     Inlines a linked SVG file by replacing the <image> element with a transformed <g> element.
@@ -205,8 +253,15 @@ def main():
         format="%(levelname)s: %(message)s",
     )
 
+    logger.info("Checking for Inkscape-specific format...")
+    cleaned_svg_path = convert_to_plain_svg_if_needed(args.input_svg)
+
     logger.info("Inlining linked vector files...")
-    inlined_svg_path = inline_linked_vectors(args.input_svg)
+    inlined_svg_path = inline_linked_vectors(cleaned_svg_path)
+
+    if cleaned_svg_path != args.input_svg:
+        cleaned_svg_path.unlink(missing_ok=True)
+        logger.info(f"Temporary plain SVG {cleaned_svg_path} removed.")
 
     try:
         export_to_pdf(inlined_svg_path, args.output_pdf)
