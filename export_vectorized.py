@@ -73,7 +73,7 @@ def convert_to_plain_svg_if_needed(svg_path: Path) -> Path:
         tree = etree.parse(str(svg_path))
         root = tree.getroot()
     except etree.XMLSyntaxError as e:
-        logger.error(f"Failed to parse SVG: {svg_path} — {e}")
+        logger.error(f"Failed to parse SVG: {svg_path} - {e}")
         raise
 
     nsmap = root.nsmap
