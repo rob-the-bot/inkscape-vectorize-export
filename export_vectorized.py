@@ -81,7 +81,7 @@ def convert_to_plain_svg_if_needed(svg_path: Path) -> Path:
         logger.info(
             f"{svg_path.name} uses Inkscape-specific features. Converting to Plain SVG."
         )
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".svg") as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".svg", dir=svg_path.parent) as tmp_file:
             plain_svg_path = Path(tmp_file.name)
 
         result = subprocess.run(
